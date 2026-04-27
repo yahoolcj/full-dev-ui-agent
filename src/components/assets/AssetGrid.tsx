@@ -8,10 +8,10 @@ import { formatDateTime, titleForAssetType } from "@/lib/utils";
 
 const filters: ("all" | AssetType)[] = [
   "all",
-  "logo",
-  "app_icon",
-  "hero_banner",
-  "icon_set",
+  "logo_square",
+  "logo_square_wordmark",
+  "login_background",
+  "custom_image",
 ];
 
 export function AssetGrid({

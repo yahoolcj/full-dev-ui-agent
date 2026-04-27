@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createFeedback } from "@/lib/db/store";
+import { createFeedback } from "@/lib/db/data";
 
 export async function POST(
   request: Request,
@@ -15,7 +15,7 @@ export async function POST(
     return NextResponse.json({ error: "反馈类型无效。" }, { status: 400 });
   }
 
-  const feedback = createFeedback(
+  const feedback = await createFeedback(
     assetId,
     id,
     body.feedback_type,

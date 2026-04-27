@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { ArrowRight, Plus } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
-import { getAssetsByProjectId, getProjects } from "@/lib/db/store";
+import { getAssetsByProjectId, getProjects } from "@/lib/db/data";
 import { formatDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default function ProjectsPage() {
-  const projects = getProjects();
+export default async function ProjectsPage() {
+  const projects = await getProjects();
 
   return (
     <AppShell>
@@ -44,41 +44,43 @@ export default function ProjectsPage() {
         </div>
       ) : (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {projects.map((project) => {
-            const assets = getAssetsByProjectId(project.id);
-            return (
-              <article
-                key={project.id}
-                className="rounded-lg border border-border bg-card p-5"
-              >
-                <h2 className="text-lg font-semibold">{project.name}</h2>
-                <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">
-                  {project.description}
-                </p>
-                <dl className="mt-5 grid gap-3 text-sm">
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">类型</dt>
-                    <dd>{project.product_type}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">资产数量</dt>
-                    <dd>{assets.length}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">最近更新</dt>
-                    <dd>{formatDateTime(project.updated_at)}</dd>
-                  </div>
-                </dl>
-                <Link
-                  href={`/projects/${project.id}`}
-                  className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-primary"
+          {await Promise.all(
+            projects.map(async (project) => {
+              const assets = await getAssetsByProjectId(project.id);
+              return (
+                <article
+                  key={project.id}
+                  className="rounded-lg border border-border bg-card p-5"
                 >
-                  进入项目
-                  <ArrowRight size={16} />
-                </Link>
-              </article>
-            );
-          })}
+                  <h2 className="text-lg font-semibold">{project.name}</h2>
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">
+                    {project.description}
+                  </p>
+                  <dl className="mt-5 grid gap-3 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">类型</dt>
+                      <dd>{project.product_type}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">资产数量</dt>
+                      <dd>{assets.length}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">最近更新</dt>
+                      <dd>{formatDateTime(project.updated_at)}</dd>
+                    </div>
+                  </dl>
+                  <Link
+                    href={`/projects/${project.id}`}
+                    className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-primary"
+                  >
+                    进入项目
+                    <ArrowRight size={16} />
+                  </Link>
+                </article>
+              );
+            }),
+          )}
         </div>
       )}
     </AppShell>

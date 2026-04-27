@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { AssetGrid } from "@/components/assets/AssetGrid";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProjectNav } from "@/components/layout/ProjectNav";
-import { getAssetsByProjectId, getProjectById } from "@/lib/db/store";
+import { getAssetsByProjectId, getProjectById } from "@/lib/db/data";
 
 export default async function AssetsPage({
   params,
@@ -10,9 +10,9 @@ export default async function AssetsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const project = getProjectById(id);
+  const project = await getProjectById(id);
   if (!project) notFound();
-  const assets = getAssetsByProjectId(id);
+  const assets = await getAssetsByProjectId(id);
 
   return (
     <AppShell>

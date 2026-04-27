@@ -17,10 +17,10 @@ export function formatDateTime(value: string | Date) {
 
 export function titleForAssetType(assetType: string) {
   const labels: Record<string, string> = {
-    logo: "Logo",
-    app_icon: "App 图标",
-    hero_banner: "首屏 Banner",
-    icon_set: "图标集",
+    logo_square: "LOGO 正方",
+    logo_square_wordmark: "LOGO 正方带文字",
+    login_background: "登录页背景",
+    custom_image: "其他图",
   };
   return labels[assetType] ?? assetType;
 }

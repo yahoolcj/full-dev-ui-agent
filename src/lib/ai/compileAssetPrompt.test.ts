@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { compileAssetPrompt } from "./compileAssetPrompt";
 import { createMockDesignSystem } from "./generateDesignSystem";
+import type { DesignSystem } from "@/types/design-system";
+import type { Project } from "@/types/project";
 
-const project = {
+const project: Project = {
   id: "project-1",
   name: "TripMind",
   description: "AI 旅行规划 App",
@@ -15,23 +17,29 @@ const project = {
 };
 
 describe("compileAssetPrompt", () => {
-  it("包含项目上下文、设计语言、输出规格和首屏 Banner 规则", () => {
-    const designSystem = createMockDesignSystem(project);
+  it("includes project context, design language, output size, and login background rules", () => {
+    const designSystem: DesignSystem = {
+      ...createMockDesignSystem(project),
+      id: "design-1",
+      project_id: project.id,
+      created_at: "2026-04-26T00:00:00.000Z",
+      updated_at: "2026-04-26T00:00:00.000Z",
+    };
 
     const prompt = compileAssetPrompt({
       project,
       designSystem,
-      assetType: "hero_banner",
-      userRequest: "展示 AI 路线规划能力的官网首屏",
-      size: "1440x600",
+      assetType: "login_background",
+      userRequest: "展示 AI 路线规划能力的登录页背景",
+      size: "1440x900",
       format: "PNG",
     });
 
     expect(prompt).toContain("TripMind");
     expect(prompt).toContain("AI 旅行规划 App");
     expect(prompt).toContain(designSystem.color_palette.primary);
-    expect(prompt).toContain("1440x600");
+    expect(prompt).toContain("1440x900");
     expect(prompt).toContain("PNG");
-    expect(prompt).toContain("预留干净空间");
+    expect(prompt).toContain("登录表单");
   });
 });

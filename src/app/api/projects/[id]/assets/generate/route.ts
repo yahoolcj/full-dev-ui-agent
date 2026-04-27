@@ -3,9 +3,11 @@ import { compileAssetPrompt } from "@/lib/ai/compileAssetPrompt";
 import { generateMockImage } from "@/lib/ai/generateImage";
 import {
   createAsset,
+  createGenerationLog,
   getDesignSystemByProjectId,
   getProjectById,
-} from "@/lib/db/store";
+  uploadAssetImage,
+} from "@/lib/db/data";
 import { titleForAssetType } from "@/lib/utils";
 import type { AssetType } from "@/types/asset";
 
@@ -21,8 +23,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const project = getProjectById(id);
-  const designSystem = getDesignSystemByProjectId(id);
+  const [project, designSystem] = await Promise.all([
+    getProjectById(id),
+    getDesignSystemByProjectId(id),
+  ]);
 
   if (!project || !designSystem) {
     return NextResponse.json(
@@ -45,18 +49,36 @@ export async function POST(
     size: body.size,
     format: body.format,
   });
-  const asset = createAsset({
+  const storedImage = await uploadAssetImage({
+    projectId: id,
+    assetType: body.asset_type,
+    fileUrl: image.fileUrl,
+    contentType: image.contentType,
+    format: body.format,
+  });
+  const asset = await createAsset({
     project_id: id,
     asset_type: body.asset_type,
     title: `${titleForAssetType(body.asset_type)} - ${new Date().toLocaleString("zh-CN")}`,
     user_request: body.user_request,
     compiled_prompt: compiledPrompt,
-    file_url: image.fileUrl,
-    storage_path: null,
-    thumbnail_url: image.fileUrl,
+    file_url: storedImage.fileUrl,
+    storage_path: storedImage.storagePath,
+    thumbnail_url: storedImage.thumbnailUrl,
     size: body.size,
     format: body.format,
     status: "generated",
+  });
+
+  await createGenerationLog({
+    project_id: id,
+    asset_id: asset.id,
+    model: "mock-image-generator",
+    input: body,
+    output: {
+      contentType: image.contentType,
+      storagePath: storedImage.storagePath,
+    },
   });
 
   return NextResponse.json({ asset, compiledPrompt });

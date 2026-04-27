@@ -14,8 +14,7 @@ export default function Home() {
             Project UI Agent
           </h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-muted-foreground">
-            输入产品想法，AI 自动生成项目设计语言。后续 Logo、App
-            图标、首屏 Banner、图标集都会继承同一套视觉风格。
+            输入产品想法，AI 自动生成项目设计语言。后续 LOGO、登录页背景和自定义图片都会继承同一套视觉风格。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -37,7 +36,7 @@ export default function Home() {
           {[
             ["设计语言记忆", Brush, "每个项目都有独立、可编辑的视觉语言。"],
             ["Prompt 编译器", WandSparkles, "把一句需求扩展成完整生成提示词。"],
-            ["资产生成", Boxes, "支持 Logo、App 图标、Banner 和图标集。"],
+            ["资产生成", Boxes, "支持 LOGO、登录页背景和自定义图片。"],
             ["资产库", Library, "保存、下载、查看 Prompt，并记录反馈。"],
           ].map(([title, Icon, text]) => (
             <article

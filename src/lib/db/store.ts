@@ -1,6 +1,7 @@
 import type { Asset, AssetFeedback, AssetInput } from "@/types/asset";
 import type { DesignSystem, DesignSystemInput } from "@/types/design-system";
 import type { Project, ProjectInput } from "@/types/project";
+import { randomUUID } from "node:crypto";
 
 type Store = {
   projects: Project[];
@@ -31,7 +32,7 @@ function now() {
 }
 
 function id(prefix: string) {
-  return `${prefix}_${crypto.randomUUID()}`;
+  return `${prefix}_${randomUUID()}`;
 }
 
 export function resetStore() {

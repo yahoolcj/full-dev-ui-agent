@@ -36,8 +36,8 @@ describe("mock store", () => {
 
     const asset = createAsset({
       project_id: project.id,
-      asset_type: "logo",
-      title: "Logo - test",
+      asset_type: "logo_square",
+      title: "LOGO 正方 - test",
       user_request: "生成一个简洁 Logo",
       compiled_prompt: "提示词",
       file_url: "data:image/svg+xml;base64,abc",

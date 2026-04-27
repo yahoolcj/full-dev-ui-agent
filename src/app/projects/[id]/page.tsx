@@ -8,7 +8,7 @@ import {
   getAssetsByProjectId,
   getDesignSystemByProjectId,
   getProjectById,
-} from "@/lib/db/store";
+} from "@/lib/db/data";
 import { formatDateTime } from "@/lib/utils";
 
 export default async function ProjectPage({
@@ -17,10 +17,13 @@ export default async function ProjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const project = getProjectById(id);
+  const project = await getProjectById(id);
   if (!project) notFound();
-  const designSystem = getDesignSystemByProjectId(id);
-  const assets = getAssetsByProjectId(id);
+
+  const [designSystem, assets] = await Promise.all([
+    getDesignSystemByProjectId(id),
+    getAssetsByProjectId(id),
+  ]);
 
   return (
     <AppShell>

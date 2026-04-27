@@ -5,7 +5,7 @@ import { ProjectNav } from "@/components/layout/ProjectNav";
 import {
   getDesignSystemByProjectId,
   getProjectById,
-} from "@/lib/db/store";
+} from "@/lib/db/data";
 
 export default async function GeneratePage({
   params,
@@ -13,8 +13,10 @@ export default async function GeneratePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const project = getProjectById(id);
-  const designSystem = getDesignSystemByProjectId(id);
+  const [project, designSystem] = await Promise.all([
+    getProjectById(id),
+    getDesignSystemByProjectId(id),
+  ]);
   if (!project || !designSystem) notFound();
 
   return (

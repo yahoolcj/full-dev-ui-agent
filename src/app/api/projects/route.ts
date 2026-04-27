@@ -4,11 +4,11 @@ import {
   createDesignSystem,
   createProject,
   getProjects,
-} from "@/lib/db/store";
+} from "@/lib/db/data";
 import type { ProjectInput } from "@/types/project";
 
 export async function GET() {
-  return NextResponse.json({ projects: getProjects() });
+  return NextResponse.json({ projects: await getProjects() });
 }
 
 export async function POST(request: Request) {
@@ -21,8 +21,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const project = createProject(input);
-  const designSystem = createDesignSystem(
+  const project = await createProject(input);
+  const designSystem = await createDesignSystem(
     project.id,
     createMockDesignSystem(project),
   );

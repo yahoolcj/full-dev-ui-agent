@@ -1,4 +1,8 @@
-export type AssetType = "logo" | "app_icon" | "hero_banner" | "icon_set";
+export type AssetType =
+  | "logo_square"
+  | "logo_square_wordmark"
+  | "login_background"
+  | "custom_image";
 
 export type AssetInput = {
   project_id: string;

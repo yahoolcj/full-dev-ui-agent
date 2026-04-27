@@ -6,14 +6,41 @@ import { useRouter } from "next/navigation";
 import { Copy, Loader2, WandSparkles } from "lucide-react";
 import type { Asset, AssetType } from "@/types/asset";
 
-const assetTypes: { value: AssetType; label: string }[] = [
-  { value: "logo", label: "Logo" },
-  { value: "app_icon", label: "App 图标" },
-  { value: "hero_banner", label: "首屏 Banner" },
-  { value: "icon_set", label: "图标集" },
+const assetTypes: {
+  value: AssetType;
+  label: string;
+  defaultSize: [number, number];
+  defaultRequest: string;
+}[] = [
+  {
+    value: "logo_square",
+    label: "LOGO 正方",
+    defaultSize: [1024, 1024],
+    defaultRequest: "生成一个正方形品牌 LOGO，突出产品核心隐喻，图形简洁、可识别。",
+  },
+  {
+    value: "logo_square_wordmark",
+    label: "LOGO 正方带文字",
+    defaultSize: [1024, 1024],
+    defaultRequest:
+      "生成一个正方形品牌 LOGO，包含图形标识和清晰品牌文字，适合品牌展示。",
+  },
+  {
+    value: "login_background",
+    label: "登录页背景",
+    defaultSize: [1440, 900],
+    defaultRequest:
+      "生成一张登录页背景图，保留右侧或中央干净区域用于放置登录表单。",
+  },
+  {
+    value: "custom_image",
+    label: "其他图",
+    defaultSize: [1024, 768],
+    defaultRequest: "生成一张用于当前产品的自定义视觉图，请按这里填写具体内容。",
+  },
 ];
 
-const sizes = ["1024x1024", "1440x600", "440x600"];
+const initialAssetType = assetTypes[0];
 
 export function AssetGenerator({
   projectId,
@@ -23,16 +50,23 @@ export function AssetGenerator({
   styleSummary: string;
 }) {
   const router = useRouter();
-  const [assetType, setAssetType] = useState<AssetType>("hero_banner");
-  const [userRequest, setUserRequest] = useState(
-    "为官网首页生成一张展示 AI 旅行路线规划能力的首屏 Banner。",
-  );
-  const [size, setSize] = useState("1440x600");
+  const [assetType, setAssetType] = useState<AssetType>(initialAssetType.value);
+  const [userRequest, setUserRequest] = useState(initialAssetType.defaultRequest);
+  const [width, setWidth] = useState(initialAssetType.defaultSize[0]);
+  const [height, setHeight] = useState(initialAssetType.defaultSize[1]);
   const [format, setFormat] = useState("PNG");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [prompt, setPrompt] = useState("");
   const [asset, setAsset] = useState<Asset | null>(null);
+
+  function changeAssetType(value: AssetType) {
+    const next = assetTypes.find((item) => item.value === value) ?? initialAssetType;
+    setAssetType(next.value);
+    setUserRequest(next.defaultRequest);
+    setWidth(next.defaultSize[0]);
+    setHeight(next.defaultSize[1]);
+  }
 
   async function generate() {
     setPending(true);
@@ -43,7 +77,7 @@ export function AssetGenerator({
       body: JSON.stringify({
         asset_type: assetType,
         user_request: userRequest,
-        size,
+        size: `${width}x${height}`,
         format,
       }),
     });
@@ -71,7 +105,7 @@ export function AssetGenerator({
           资产类型
           <select
             value={assetType}
-            onChange={(event) => setAssetType(event.target.value as AssetType)}
+            onChange={(event) => changeAssetType(event.target.value as AssetType)}
             className="rounded-md border border-border bg-background px-3 py-2"
           >
             {assetTypes.map((type) => (
@@ -82,25 +116,37 @@ export function AssetGenerator({
           </select>
         </label>
         <label className="grid gap-2 text-sm font-medium">
-          生成需求
+          生成内容
           <textarea
             value={userRequest}
             onChange={(event) => setUserRequest(event.target.value)}
             className="min-h-32 rounded-md border border-border bg-background px-3 py-2"
           />
         </label>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <label className="grid gap-2 text-sm font-medium">
-            尺寸
-            <select
-              value={size}
-              onChange={(event) => setSize(event.target.value)}
+            宽度
+            <input
+              type="number"
+              min={256}
+              max={4096}
+              step={64}
+              value={width}
+              onChange={(event) => setWidth(Number(event.target.value))}
               className="rounded-md border border-border bg-background px-3 py-2"
-            >
-              {sizes.map((item) => (
-                <option key={item}>{item}</option>
-              ))}
-            </select>
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium">
+            高度
+            <input
+              type="number"
+              min={256}
+              max={4096}
+              step={64}
+              value={height}
+              onChange={(event) => setHeight(Number(event.target.value))}
+              className="rounded-md border border-border bg-background px-3 py-2"
+            />
           </label>
           <label className="grid gap-2 text-sm font-medium">
             格式

@@ -5,7 +5,9 @@ export function createClient() {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !anonKey) {
-    throw new Error("Supabase 浏览器环境变量未配置。");
+    throw new Error(
+      "Supabase browser config is missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+    );
   }
 
   return createBrowserClient(url, anonKey);

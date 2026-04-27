@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FolderKanban, Plus, Sparkles } from "lucide-react";
+import { FolderKanban, Plus, Settings2, Sparkles } from "lucide-react";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -25,6 +25,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Plus size={17} />
             创建项目
+          </Link>
+          <Link
+            href="/settings/models"
+            className="flex items-center gap-3 rounded-md px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Settings2 size={17} />
+            模型配置
           </Link>
         </nav>
       </aside>

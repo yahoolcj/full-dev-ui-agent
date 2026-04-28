@@ -31,12 +31,34 @@ type OpenAIImageResponse = {
   };
 };
 
-type ImageRequestBody = {
+type OpenAIImageRequestBody = {
   model: string;
   prompt: string;
   size: "1024x1024" | "1536x1024" | "1024x1536";
   quality: "low" | "medium" | "high" | "auto";
   output_format: "png" | "jpeg" | "webp";
+};
+
+type GptsapiImageRequestBody = {
+  prompt: string;
+  aspect_ratio: string;
+  output_format: "png" | "jpeg" | "webp";
+};
+
+type GptsapiImageResponse = {
+  data?: {
+    id?: string;
+    model?: string;
+    outputs?: unknown[];
+    urls?: { get?: string };
+    status?: string;
+  };
+  message?: string;
+  code?: number;
+  urls?: { get?: string };
+  outputs?: unknown[];
+  status?: string;
+  error?: unknown;
 };
 
 export type ImageGenerationDebug = {
@@ -45,16 +67,15 @@ export type ImageGenerationDebug = {
   baseUrl?: string;
   endpoint?: string;
   triedEndpoints?: string[];
-  requestBody?: Omit<ImageRequestBody, "prompt"> & {
-    promptLength: number;
-    promptPreview: string;
-    requestedSize: string;
-  };
+  requestBody?: Record<string, unknown>;
   upstreamStatus?: number;
   upstreamStatusText?: string;
-  upstreamError?: OpenAIImageResponse["error"] | null;
+  upstreamError?: unknown;
   upstreamBodyPreview?: string;
   responseKeys?: string[];
+  predictionId?: string;
+  predictionStatus?: string;
+  resultUrl?: string;
 };
 
 export class ImageGenerationError extends Error {
@@ -68,6 +89,8 @@ export class ImageGenerationError extends Error {
 }
 
 const DEFAULT_IMAGE_BASE_URL = "https://api.openai.com/v1";
+const GPTSAPI_POLL_ATTEMPTS = 30;
+const GPTSAPI_POLL_INTERVAL_MS = 2000;
 
 export async function generateImage(input: GenerateImageInput): Promise<GeneratedImage> {
   const config = await resolveImageGeneratorConfig();
@@ -78,9 +101,147 @@ export async function generateImage(input: GenerateImageInput): Promise<Generate
     hasApiKey: Boolean(config.apiKey),
   });
 
-  const result = await requestImageGeneration(config, input);
+  if (isGptsapiConfig(config.baseUrl)) {
+    return generateGptsapiImage(config, input);
+  }
 
-  const payload = parseOpenAIImageResponse(result.responseText);
+  return generateOpenAIImage(config, input);
+}
+
+async function generateGptsapiImage(
+  config: Awaited<ReturnType<typeof resolveImageGeneratorConfig>>,
+  input: GenerateImageInput,
+): Promise<GeneratedImage> {
+  const contentType = contentTypeForFormat(input.format);
+  const body = {
+    prompt: input.prompt,
+    aspect_ratio: aspectRatioForSize(input.size),
+    output_format: outputFormatFor(input.format),
+  } satisfies GptsapiImageRequestBody;
+  const endpoint = gptsapiTextToImageEndpoint(config.baseUrl, config.model);
+  const debug: ImageGenerationDebug = {
+    providerKey: config.providerKey,
+    model: config.model,
+    baseUrl: config.baseUrl,
+    endpoint,
+    requestBody: {
+      ...body,
+      requestedSize: input.size,
+      promptLength: input.prompt.length,
+    },
+  };
+
+  logImageRequest("gptsapi create", endpoint, body);
+  const createResponse = await fetch(endpoint, {
+    method: "POST",
+    headers: imageRequestHeaders(config.apiKey),
+    body: JSON.stringify(body),
+  });
+  const createResponseText = await createResponse.text();
+  logImageResponse("gptsapi create", endpoint, createResponse, createResponseText);
+
+  const createPayload = parseJson<GptsapiImageResponse>(createResponseText);
+  if (!createResponse.ok || (createPayload.code && createPayload.code !== 200)) {
+    throw new ImageGenerationError(
+      createPayload.message ??
+        `gptsapi image creation failed with status ${createResponse.status}.`,
+      {
+        ...debug,
+        upstreamStatus: createResponse.status,
+        upstreamStatusText: createResponse.statusText,
+        upstreamError: createPayload.error ?? createPayload.message,
+        upstreamBodyPreview: createResponseText.slice(0, 4000),
+      },
+    );
+  }
+
+  const directImage = findImageOutput(createPayload);
+  if (directImage) {
+    return finalizeGeneratedImage(directImage, contentType, config, "gptsapi direct");
+  }
+
+  const resultUrl = createPayload.data?.urls?.get ?? createPayload.urls?.get;
+  if (!resultUrl) {
+    throw new ImageGenerationError("gptsapi response did not include result URL.", {
+      ...debug,
+      upstreamStatus: createResponse.status,
+      upstreamStatusText: createResponse.statusText,
+      upstreamBodyPreview: createResponseText.slice(0, 4000),
+      predictionId: createPayload.data?.id,
+      predictionStatus: createPayload.data?.status ?? createPayload.status,
+    });
+  }
+
+  const finalImage = await pollGptsapiResult(resultUrl, config.apiKey, {
+    ...debug,
+    predictionId: createPayload.data?.id,
+    predictionStatus: createPayload.data?.status ?? createPayload.status,
+    resultUrl,
+  });
+
+  return finalizeGeneratedImage(finalImage, contentType, config, "gptsapi result");
+}
+
+async function pollGptsapiResult(
+  resultUrl: string,
+  apiKey: string,
+  debug: ImageGenerationDebug,
+) {
+  for (let attempt = 1; attempt <= GPTSAPI_POLL_ATTEMPTS; attempt++) {
+    console.log("[image-generator] gptsapi poll request", {
+      attempt,
+      endpoint: resultUrl,
+      method: "GET",
+      headers: { Authorization: "Bearer [redacted]" },
+    });
+    const response = await fetch(resultUrl, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const responseText = await response.text();
+    logImageResponse(`gptsapi poll ${attempt}`, resultUrl, response, responseText);
+
+    const payload = parseJson<GptsapiImageResponse>(responseText);
+    if (!response.ok || (payload.code && payload.code !== 200)) {
+      throw new ImageGenerationError(
+        payload.message ?? `gptsapi result polling failed with status ${response.status}.`,
+        {
+          ...debug,
+          upstreamStatus: response.status,
+          upstreamStatusText: response.statusText,
+          upstreamError: payload.error ?? payload.message,
+          upstreamBodyPreview: responseText.slice(0, 4000),
+          predictionStatus: payload.data?.status ?? payload.status,
+        },
+      );
+    }
+
+    const image = findImageOutput(payload);
+    if (image) return image;
+
+    const status = payload.data?.status ?? payload.status;
+    if (status && ["failed", "failure", "error", "canceled", "cancelled"].includes(status)) {
+      throw new ImageGenerationError(`gptsapi prediction finished with status ${status}.`, {
+        ...debug,
+        upstreamStatus: response.status,
+        upstreamStatusText: response.statusText,
+        upstreamBodyPreview: responseText.slice(0, 4000),
+        predictionStatus: status,
+      });
+    }
+
+    await delay(GPTSAPI_POLL_INTERVAL_MS);
+  }
+
+  throw new ImageGenerationError("gptsapi image generation timed out.", debug);
+}
+
+async function generateOpenAIImage(
+  config: Awaited<ReturnType<typeof resolveImageGeneratorConfig>>,
+  input: GenerateImageInput,
+): Promise<GeneratedImage> {
+  const result = await requestOpenAIImageGeneration(config, input);
+  const payload = parseJson<OpenAIImageResponse>(result.responseText);
 
   if (!result.response.ok) {
     throw new ImageGenerationError(
@@ -91,23 +252,20 @@ export async function generateImage(input: GenerateImageInput): Promise<Generate
         upstreamStatus: result.response.status,
         upstreamStatusText: result.response.statusText,
         upstreamError: payload.error ?? null,
-        upstreamBodyPreview: result.responseText.slice(0, 2000),
+        upstreamBodyPreview: result.responseText.slice(0, 4000),
       },
     );
   }
 
   const image = payload.data?.[0];
   if (!image?.b64_json && !image?.url) {
-    throw new ImageGenerationError(
-      "Image generation response did not include image data.",
-      {
-        ...result.debug,
-        upstreamStatus: result.response.status,
-        upstreamStatusText: result.response.statusText,
-        upstreamBodyPreview: result.responseText.slice(0, 2000),
-        responseKeys: Object.keys(image ?? payload),
-      },
-    );
+    throw new ImageGenerationError("Image generation response did not include image data.", {
+      ...result.debug,
+      upstreamStatus: result.response.status,
+      upstreamStatusText: result.response.statusText,
+      upstreamBodyPreview: result.responseText.slice(0, 4000),
+      responseKeys: Object.keys(image ?? payload),
+    });
   }
 
   const contentType = contentTypeForFormat(input.format);
@@ -119,26 +277,10 @@ export async function generateImage(input: GenerateImageInput): Promise<Generate
     throw new ImageGenerationError("Image generation response had no usable image.");
   }
 
-  console.log("[image-generator] generated image result", {
-    contentType,
-    providerKey: config.providerKey,
-    model: config.model,
-    source: image.b64_json ? "b64_json" : "url",
-    b64Length: image.b64_json?.length ?? null,
-    url: image.url ?? null,
-    revisedPrompt: image.revised_prompt,
-  });
-
-  return {
-    fileUrl,
-    contentType,
-    model: config.model,
-    providerKey: config.providerKey,
-    revisedPrompt: image.revised_prompt,
-  };
+  return finalizeGeneratedImage(fileUrl, contentType, config, "openai");
 }
 
-async function requestImageGeneration(
+async function requestOpenAIImageGeneration(
   config: Awaited<ReturnType<typeof resolveImageGeneratorConfig>>,
   input: GenerateImageInput,
 ) {
@@ -148,17 +290,14 @@ async function requestImageGeneration(
     size: normalizeOpenAIImageSize(input.size),
     quality: "auto",
     output_format: outputFormatFor(input.format),
-  } satisfies ImageRequestBody;
+  } satisfies OpenAIImageRequestBody;
   const request = {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: imageRequestHeaders(config.apiKey),
     body: JSON.stringify(body),
   };
 
-  const endpoints = imageGenerationEndpoints(config.baseUrl);
+  const endpoints = openAIImageGenerationEndpoints(config.baseUrl);
   const debug: ImageGenerationDebug = {
     providerKey: config.providerKey,
     model: config.model,
@@ -174,10 +313,10 @@ async function requestImageGeneration(
       requestedSize: input.size,
     },
   };
-  logOpenAIImageRequest(endpoints[0], body, input.size);
+  logImageRequest("openai", endpoints[0], body);
   const firstResponse = await fetch(endpoints[0], request);
   const firstResponseText = await firstResponse.text();
-  logOpenAIImageResponse(endpoints[0], firstResponse, firstResponseText);
+  logImageResponse("openai", endpoints[0], firstResponse, firstResponseText);
   if (firstResponse.status !== 404 || endpoints.length === 1) {
     return {
       response: firstResponse,
@@ -190,10 +329,10 @@ async function requestImageGeneration(
     firstEndpoint: endpoints[0],
     fallbackEndpoint: endpoints[1],
   });
-  logOpenAIImageRequest(endpoints[1], body, input.size);
+  logImageRequest("openai fallback", endpoints[1], body);
   const secondResponse = await fetch(endpoints[1], request);
   const secondResponseText = await secondResponse.text();
-  logOpenAIImageResponse(endpoints[1], secondResponse, secondResponseText);
+  logImageResponse("openai fallback", endpoints[1], secondResponse, secondResponseText);
   return {
     response: secondResponse,
     responseText: secondResponseText,
@@ -251,11 +390,28 @@ async function resolveImageGeneratorConfig() {
   };
 }
 
-function imageGenerationEndpoints(baseUrl: string) {
+function isGptsapiConfig(baseUrl: string) {
+  return baseUrl.includes("api.gptsapi.net");
+}
+
+function gptsapiTextToImageEndpoint(baseUrl: string, model: string) {
+  return `${baseUrl.replace(/\/+$/, "")}/api/v3/openai/${encodeURIComponent(
+    model,
+  )}/text-to-image`;
+}
+
+function openAIImageGenerationEndpoints(baseUrl: string) {
   const normalized = baseUrl.replace(/\/+$/, "");
   if (normalized.endsWith("/images/generations")) return [normalized];
   if (normalized.endsWith("/v1")) return [`${normalized}/images/generations`];
   return [`${normalized}/v1/images/generations`, `${normalized}/images/generations`];
+}
+
+function imageRequestHeaders(apiKey: string) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
 }
 
 function contentTypeForFormat(format: string) {
@@ -265,7 +421,7 @@ function contentTypeForFormat(format: string) {
   return "image/png";
 }
 
-function normalizeOpenAIImageSize(size: string): ImageRequestBody["size"] {
+function normalizeOpenAIImageSize(size: string): OpenAIImageRequestBody["size"] {
   const match = size.match(/^(\d+)x(\d+)$/i);
   if (!match) return "1024x1024";
 
@@ -281,27 +437,129 @@ function normalizeOpenAIImageSize(size: string): ImageRequestBody["size"] {
   return "1024x1024";
 }
 
-function outputFormatFor(format: string): ImageRequestBody["output_format"] {
+function aspectRatioForSize(size: string) {
+  const match = size.match(/^(\d+)x(\d+)$/i);
+  if (!match) return "1:1";
+
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return "1:1";
+  }
+
+  const gcd = greatestCommonDivisor(width, height);
+  return `${Math.round(width / gcd)}:${Math.round(height / gcd)}`;
+}
+
+function outputFormatFor(format: string): GptsapiImageRequestBody["output_format"] {
   const normalized = format.toLowerCase();
   if (normalized === "jpg" || normalized === "jpeg") return "jpeg";
   if (normalized === "webp") return "webp";
   return "png";
 }
 
-function parseOpenAIImageResponse(responseText: string): OpenAIImageResponse {
+async function finalizeGeneratedImage(
+  source: string,
+  contentType: string,
+  config: Awaited<ReturnType<typeof resolveImageGeneratorConfig>>,
+  sourceType: string,
+): Promise<GeneratedImage> {
+  const fileUrl = source.startsWith("http")
+    ? (await fetchRemoteImageAsDataUrl(source, contentType)) ?? source
+    : source;
+
+  console.log("[image-generator] generated image result", {
+    contentType,
+    providerKey: config.providerKey,
+    model: config.model,
+    source: sourceType,
+    dataUrl: fileUrl.startsWith("data:") ? summarizeDataUrl(fileUrl) : null,
+    url: source.startsWith("data:") ? null : source,
+    uploadedViaDataUrl: fileUrl.startsWith("data:"),
+  });
+
+  return {
+    fileUrl,
+    contentType,
+    model: config.model,
+    providerKey: config.providerKey,
+  };
+}
+
+function findImageOutput(payload: unknown): string | null {
+  if (typeof payload === "string") {
+    if (payload.startsWith("data:image/")) return payload;
+    if (/^https?:\/\//.test(payload)) return payload;
+    return null;
+  }
+
+  if (!payload || typeof payload !== "object") return null;
+
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const found = findImageOutput(item);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  for (const key of [
+    "url",
+    "image",
+    "image_url",
+    "file_url",
+    "output",
+    "result",
+  ]) {
+    const found = findImageOutput(record[key]);
+    if (found) return found;
+  }
+
+  return findImageOutput(record.outputs) ?? findImageOutput(record.data);
+}
+
+function parseJson<T>(responseText: string): T {
   try {
-    return JSON.parse(responseText) as OpenAIImageResponse;
+    return JSON.parse(responseText) as T;
   } catch {
-    return {};
+    return {} as T;
   }
 }
 
-function logOpenAIImageRequest(
+async function fetchRemoteImageAsDataUrl(url: string, fallbackContentType: string) {
+  try {
+    console.log("[image-generator] download generated image", { url });
+    const response = await fetch(url);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!response.ok) {
+      console.warn("[image-generator] generated image download failed", {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        bodyPreview: bytes.toString("utf8").slice(0, 1000),
+      });
+      return null;
+    }
+
+    const contentType = response.headers.get("content-type") ?? fallbackContentType;
+    return `data:${contentType};base64,${bytes.toString("base64")}`;
+  } catch (error) {
+    console.warn("[image-generator] generated image download errored", {
+      url,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+function logImageRequest(
+  label: string,
   endpoint: string,
-  body: ImageRequestBody,
-  requestedSize: string,
+  body: GptsapiImageRequestBody | OpenAIImageRequestBody,
 ) {
   console.log("[image-generator] request", {
+    label,
     endpoint,
     method: "POST",
     headers: {
@@ -310,42 +568,73 @@ function logOpenAIImageRequest(
     },
     body: {
       ...body,
-      requestedSize,
       promptLength: body.prompt.length,
     },
   });
 }
 
-function logOpenAIImageResponse(
+function logImageResponse(
+  label: string,
   endpoint: string,
   response: Response,
   responseText: string,
 ) {
   console.log("[image-generator] response", {
+    label,
     endpoint,
     status: response.status,
     statusText: response.statusText,
     headers: Object.fromEntries(response.headers.entries()),
-    body: summarizeOpenAIImageResponse(responseText),
+    body: summarizeImageResponse(responseText),
   });
 }
 
-function summarizeOpenAIImageResponse(responseText: string) {
-  const payload = parseOpenAIImageResponse(responseText);
-  if (!payload.data) return responseText;
+function summarizeImageResponse(responseText: string) {
+  const payload = parseJson<unknown>(responseText);
+  if (!payload || typeof payload !== "object") return responseText;
+  return redactLargeImagePayload(payload);
+}
 
+function redactLargeImagePayload(value: unknown): unknown {
+  if (typeof value === "string") {
+    if (value.startsWith("data:image/")) return summarizeDataUrl(value);
+    if (value.length > 1000) {
+      return { length: value.length, prefix: value.slice(0, 120) };
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) return value.map(redactLargeImagePayload);
+  if (!value || typeof value !== "object") return value;
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [
+      key,
+      key === "b64_json" ? redactLargeImagePayload(String(child)) : redactLargeImagePayload(child),
+    ]),
+  );
+}
+
+function summarizeDataUrl(dataUrl: string) {
   return {
-    ...payload,
-    data: payload.data.map((item) => ({
-      ...item,
-      b64_json: item.b64_json
-        ? {
-            length: item.b64_json.length,
-            prefix: item.b64_json.slice(0, 80),
-          }
-        : undefined,
-    })),
+    length: dataUrl.length,
+    prefix: dataUrl.slice(0, 120),
   };
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function greatestCommonDivisor(a: number, b: number): number {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+  while (y) {
+    const next = x % y;
+    x = y;
+    y = next;
+  }
+  return x || 1;
 }
 
 function escapeXml(value: string) {

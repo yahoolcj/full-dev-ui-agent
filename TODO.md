@@ -33,7 +33,7 @@
 - 完成真实图片生成链路：
   - 资产生成 API 已替换 mock SVG，改为调用 OpenAI 兼容图片生成接口
   - 图片生成链路已通过 `image_generator` 模型配置读取 provider、baseUrl 和 key
-  - Supabase `openai` provider 已配置为 gptsapi baseUrl，并绑定 `image_generator` 到 `gpt-image-2`
+  - Supabase `openai` provider 已配置为 gptsapi baseUrl，并绑定 `image_generator` 到 `gpt-image-2-plus`
   - 生成结果会上传到 Supabase Storage，并在 `generation_logs` 记录实际模型和 provider
 - 默认 AI 节点：
   - `product_understander`
@@ -53,9 +53,9 @@
 
 ## 当前实现说明
 
-- 当前真实图片生成使用 OpenAI 兼容 REST 接口：`{baseUrl}/v1/images/generations`。
-- `baseUrl` 如果已经以 `/v1` 结尾，则不会重复追加 `/v1`。
-- 远端返回 `b64_json` 时直接保存；返回临时 `url` 时会先下载并转为 data URL，再上传到 Supabase Storage。
+- 当前 gptsapi 图片生成使用异步预测接口：`{baseUrl}/api/v3/openai/{model}/text-to-image`。
+- gptsapi 请求体与示例保持一致：`prompt`、`aspect_ratio`、`output_format`。
+- 创建任务后会轮询 `urls.get`，拿到最终图片 URL 后下载为 data URL，再上传到 Supabase Storage。
 - 模型配置中心已完成持久化和 UI，但其他 AI 调用链路还没有全面改成通过 `modelRole` 调配置。
 - `npm run build` 可能会调用当前 npm 绑定的旧 Node.js；Next.js 16 需要 Node.js `>=20.9.0`。直接用 `C:\Program Files\nodejs\node.exe` 运行 Next build 已通过。
 - 开发过程中暴露过高权限 key，建议在对应控制台轮换/撤销。

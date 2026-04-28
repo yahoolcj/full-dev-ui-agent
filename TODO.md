@@ -1,4 +1,4 @@
-﻿# Project UI Agent TODO 清单
+# Project UI Agent TODO 清单
 
 ## 已完成
 
@@ -10,6 +10,7 @@
   - `/projects/[id]/style`
   - `/projects/[id]/generate`
   - `/projects/[id]/assets`
+  - `/settings/models`
 - 完成项目创建、设计语言生成/编辑、Prompt 编译、资产生成、资产库和反馈 API。
 - 完成当前阶段资产类型调整：
   - `logo_square`：LOGO 正方
@@ -29,6 +30,11 @@
   - API 响应不返回明文 key 或密文字段
   - 已创建并验证 `model_providers`、`model_configs`、`model_test_runs`
   - 已初始化 7 个供应商和 9 个 AI 节点
+- 完成真实图片生成链路：
+  - 资产生成 API 已替换 mock SVG，改为调用 OpenAI 兼容图片生成接口
+  - 图片生成链路已通过 `image_generator` 模型配置读取 provider、baseUrl 和 key
+  - Supabase `openai` provider 已配置为 gptsapi baseUrl，并绑定 `image_generator` 到 `gpt-image-2`
+  - 生成结果会上传到 Supabase Storage，并在 `generation_logs` 记录实际模型和 provider
 - 默认 AI 节点：
   - `product_understander`
   - `design_system_generator`
@@ -47,10 +53,12 @@
 
 ## 当前实现说明
 
-- 图片生成仍是 mock SVG 预览，还没有接入真实 `gpt-image-2`。
-- 模型配置中心已完成持久化和 UI，但生成链路还没有全面改成通过 `modelRole` 调配置。
-- `npm run build` 会调用当前 npm 绑定的 Node.js `18.20.0`，不满足 Next.js 16 的 `>=20.9.0` 要求；直接用 `C:\Program Files\nodejs\node.exe` 运行 Next build 已通过。
-- 本次开发过程中暴露过 Supabase service-role key 和 Supabase personal access token，建议在 Supabase 控制台轮换/撤销。
+- 当前真实图片生成使用 OpenAI 兼容 REST 接口：`{baseUrl}/v1/images/generations`。
+- `baseUrl` 如果已经以 `/v1` 结尾，则不会重复追加 `/v1`。
+- 远端返回 `b64_json` 时直接保存；返回临时 `url` 时会先下载并转为 data URL，再上传到 Supabase Storage。
+- 模型配置中心已完成持久化和 UI，但其他 AI 调用链路还没有全面改成通过 `modelRole` 调配置。
+- `npm run build` 可能会调用当前 npm 绑定的旧 Node.js；Next.js 16 需要 Node.js `>=20.9.0`。直接用 `C:\Program Files\nodejs\node.exe` 运行 Next build 已通过。
+- 开发过程中暴露过高权限 key，建议在对应控制台轮换/撤销。
 
 ## 待办事项
 
@@ -64,11 +72,9 @@
   - `OPENAI_API_KEY`
   - `MODEL_CONFIG_ENCRYPTION_KEY`
   - `NEXT_PUBLIC_APP_URL`
-- 接入真实 `gpt-image-2` 图片生成，替换当前 mock 图片。
-- 让图片生成链路通过 `image_generator` 的模型配置读取 provider、baseUrl 和 key。
 - 增加生成中、失败、重试等状态。
 - 增加端到端验证，覆盖创建项目、生成设计语言、生成资产、保存到 Supabase。
-- 轮换已经暴露过的 Supabase 高权限 key。
+- 轮换已经暴露过的高权限 key。
 
 ### P1：产品体验增强
 
